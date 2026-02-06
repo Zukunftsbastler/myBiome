@@ -105,6 +105,10 @@ export class SimulationLoop {
       this.rng,
     );
 
+    if (vegResult.newGenomes.length > 0) {
+      this.registerGenomes(vegResult.newGenomes);
+    }
+
     this.totalFlux += vegResult.fluxGenerated;
     events.push(...vegResult.events);
 

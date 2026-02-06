@@ -177,3 +177,39 @@ export function canGerminate(cell: CellData, genome: Genome): boolean {
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
+
+export function mutateGenome(parent: Genome, rate: number, rng: PRNG): Genome {
+  const newGenome = { ...parent };
+  
+  // Neue ID generieren, damit es keine Referenz-Probleme gibt
+  newGenome.id = `${parent.id}_v${Math.floor(rng() * 1000000).toString(16)}`;
+  newGenome.name = `${parent.name}`; // Name bleibt vorerst gleich (oder hier ändern)
+
+  // Liste der mutierbaren Eigenschaften (Floats 0.0 - 1.0)
+  const traits: (keyof Genome)[] = [
+    'ligninInvestment', 'stemGirth', 'biomassDistribution', 
+    'photosynthesisEfficiency', 'solarPanelStrategy', 'rootDepthStrategy', 
+    'nitrogenFixation', 'radiationTolerance', 'droughtResistance', 
+    'toxicity', 'packagingInvestment', 'sugarContent', 'signalingColor', 
+    'germinationVariance', 'footprint', 'maxHeight'
+  ];
+
+  for (const trait of traits) {
+    if (rng() < rate) {
+      // Leichter "Drift" des Wertes um +/- 5%
+      const drift = (rng() - 0.5) * 0.1;
+      const val = newGenome[trait];
+      if (typeof val === 'number') {
+        // @ts-ignore: Dynamischer Zugriff ist hier sicher
+        newGenome[trait] = clamp(val + drift, 0.0, 1.0);
+      }
+    }
+  }
+
+  // Farbe mutiert separat (Hue 0-360)
+  if (rng() < rate) {
+    newGenome.colorHue = (newGenome.colorHue + (rng() - 0.5) * 20 + 360) % 360;
+  }
+
+  return newGenome;
+}

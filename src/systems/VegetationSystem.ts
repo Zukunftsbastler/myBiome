@@ -15,6 +15,7 @@ import {
   deriveGrowthSpeed,
   deriveWaterNeed,
   hexNeighbors,
+  mutateGenome,
 } from '@core/math/simulationUtils';
 
 export interface VegetationTickResult {
@@ -37,6 +38,7 @@ export class VegetationSystem {
     const events: SimulationEvent[] = [];
     const entitiesToSpawn: VegetationTickResult['entitiesToSpawn'] = [];
     const entitiesToRemove: number[] = [];
+    const newGenomes: Genome[] = [];
 
     for (const entity of entities.values()) {
       if (entity.isDead) continue;
@@ -44,7 +46,7 @@ export class VegetationSystem {
       if (entity.type === 'SEED') {
         this.processSeed(entity, genomes, grid, weather, tick, rng, events, entitiesToSpawn, entitiesToRemove);
       } else if (entity.type === 'PLANT') {
-        const result = this.processPlant(entity, genomes, grid, weather, tick, rng, events, entitiesToSpawn);
+        const result = this.processPlant(entity, genomes, grid, weather, tick, rng, events, entitiesToSpawn, newGenomes);
         fluxGenerated += result.flux;
         if (result.dead) {
           entitiesToRemove.push(entity.id);
@@ -52,7 +54,7 @@ export class VegetationSystem {
       }
     }
 
-    return { fluxGenerated, events, entitiesToSpawn, entitiesToRemove };
+    return { fluxGenerated, events, entitiesToSpawn, entitiesToRemove, newGenomes };
   }
 
   private processSeed(
@@ -119,6 +121,7 @@ export class VegetationSystem {
     rng: PRNG,
     events: SimulationEvent[],
     spawns: VegetationTickResult['entitiesToSpawn'],
+    newGenomes: Genome[],
   ): { flux: number; dead: boolean } {
     const genome = genomes.get(entity.genomeId);
     if (!genome) return { flux: 0, dead: false };
@@ -188,9 +191,24 @@ export class VegetationSystem {
         const validTargets = neighbors.filter(n => grid.hasCell(n.q, n.r));
         if (validTargets.length > 0) {
           const target = validTargets[Math.floor(rng() * validTargets.length)];
+          let childGenomeId = entity.genomeId;
+
+          // Mutation: 20% Chance (oder aus Config laden)
+          if (rng() < 0.2) {
+            const mutated = mutateGenome(genome, 0.2, rng);
+            newGenomes.push(mutated); 
+            childGenomeId = mutated.id;
+            
+            // Optional: Event für UI loggen
+            events.push({
+              tick, type: 'ENTITY_SPAWNED', location: entity.position, 
+              messageKey: 'event.mutation', subjectId: entity.id 
+            });
+          }
+
           spawns.push({
             type: 'SEED',
-            genomeId: entity.genomeId,
+            genomeId: childGenomeId,
             position: target,
           });
         }
