@@ -1,0 +1,229 @@
+:root {
+  /* --- Brand Colors (Synthetisch) --- */
+  --color-ui-primary: #00ADB5;
+  --color-ui-highlight: #FFD700;
+  --color-ui-danger: #FF4B4B;
+  --color-ui-success: #46C93A;
+  --color-ui-bg-glass: rgba(10, 15, 20, 0.85);
+
+  /* --- Typography --- */
+  --font-mono: 'Menlo', 'Consolas', monospace;
+  --font-sans: system-ui, -apple-system, sans-serif;
+
+  /* --- Spacing (Grid System) --- */
+  --spacing-xs: 4px;
+  --spacing-s: 8px;
+  --spacing-m: 16px;
+  --spacing-l: 24px;
+}
+
+html, body {
+  margin: 0;
+  overflow: hidden;
+  background: #0a0f14;
+}
+
+#app {
+  width: 100vw;
+  height: 100vh;
+}
+
+canvas {
+  image-rendering: pixelated;
+}
+
+/* ── HUD Container ── */
+.hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  font-family: var(--font-mono);
+  color: #e0e0e0;
+  font-size: 12px;
+}
+
+.hud > * {
+  pointer-events: auto;
+}
+
+/* ── Glassmorphism Panel Base ── */
+.hud__panel {
+  background: var(--color-ui-bg-glass);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 173, 181, 0.3);
+  border-radius: 6px;
+  padding: var(--spacing-s);
+}
+
+/* ── Status Bar (top-left) ── */
+.hud__status {
+  position: absolute;
+  top: var(--spacing-s);
+  left: var(--spacing-s);
+  display: flex;
+  gap: var(--spacing-s);
+  align-items: center;
+}
+
+.hud__status-item {
+  white-space: nowrap;
+}
+
+.hud__status-item--flux {
+  color: var(--color-ui-highlight);
+}
+
+.hud__status-item--weather {
+  color: var(--color-ui-primary);
+}
+
+/* ── Lens Bar (top-right) ── */
+.hud__lens-bar {
+  position: absolute;
+  top: var(--spacing-s);
+  right: var(--spacing-s);
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+/* ── Toolbar (bottom-center) ── */
+.hud__toolbar {
+  position: absolute;
+  bottom: var(--spacing-m);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+/* ── Tool/Lens Buttons ── */
+.hud__btn {
+  background: rgba(10, 15, 20, 0.7);
+  border: 1px solid rgba(0, 173, 181, 0.3);
+  border-radius: 4px;
+  color: #c0c0c0;
+  padding: var(--spacing-xs) var(--spacing-s);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.hud__btn:hover {
+  border-color: var(--color-ui-primary);
+  color: #fff;
+}
+
+.hud__btn--active {
+  border-color: var(--color-ui-primary);
+  color: var(--color-ui-primary);
+  background: rgba(0, 173, 181, 0.15);
+}
+
+.hud__btn--cost {
+  font-size: 9px;
+  color: var(--color-ui-highlight);
+  margin-left: var(--spacing-xs);
+}
+
+/* ── Event Log (bottom-left) ── */
+.hud__event-log {
+  position: absolute;
+  bottom: var(--spacing-m);
+  left: var(--spacing-s);
+  width: 260px;
+  max-height: 140px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.hud__event-log::-webkit-scrollbar {
+  width: 4px;
+}
+
+.hud__event-log::-webkit-scrollbar-thumb {
+  background: rgba(0, 173, 181, 0.3);
+  border-radius: 2px;
+}
+
+.hud__event-item {
+  padding: 2px var(--spacing-xs);
+  font-size: 10px;
+  color: #999;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.hud__event-item--spawn { color: var(--color-ui-success); }
+.hud__event-item--death { color: var(--color-ui-danger); }
+.hud__event-item--flux  { color: var(--color-ui-highlight); }
+
+/* ── Inspector Panel (right side) ── */
+.inspector {
+  position: absolute;
+  top: 50px;
+  right: var(--spacing-s);
+  width: 240px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  display: none;
+}
+
+.inspector--visible {
+  display: block;
+}
+
+.inspector__title {
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--color-ui-primary);
+  margin-bottom: var(--spacing-s);
+}
+
+.inspector__section {
+  margin-bottom: var(--spacing-s);
+}
+
+.inspector__section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: var(--spacing-xs);
+}
+
+/* ── Value Bar ── */
+.value-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-bottom: 3px;
+}
+
+.value-bar__label {
+  width: 70px;
+  font-size: 10px;
+  color: #aaa;
+  text-align: right;
+}
+
+.value-bar__track {
+  flex: 1;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.value-bar__fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.2s;
+}
+
+.value-bar__value {
+  width: 36px;
+  font-size: 10px;
+  color: #ccc;
+}
