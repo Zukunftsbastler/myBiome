@@ -23,6 +23,7 @@ export interface VegetationTickResult {
   events: SimulationEvent[];
   entitiesToSpawn: Array<{ type: 'SEED'; genomeId: string; position: HexCoord }>;
   entitiesToRemove: number[];
+  newGenomes: Genome[];
 }
 
 export class VegetationSystem {
