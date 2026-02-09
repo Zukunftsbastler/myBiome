@@ -1,6 +1,7 @@
 export interface Genome {
   id: string;      // Eindeutige ID (z.B. "seed_fern_v1")
   name: string;    // Generierter Name (z.B. "Rotfarn")
+  parentSpeciesId?: string; // Basis-Art für Speziations-Tracking
   
   // --- A. Morphologie (Struktur & Kosten) ---
   ligninInvestment: number;    // 0.0 (Weich) - 1.0 (Holz)

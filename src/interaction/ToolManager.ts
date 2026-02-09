@@ -1,4 +1,5 @@
 import type { ToolType, HexCoord } from '@core/types';
+import type { GameModifiers } from '@core/types/campaign';
 import { TOOL_CONFIGS } from '@core/types/ui';
 import { SIM_CONSTANTS as C } from '@core/math/constants';
 import type { SimulationLoop } from '@systems/SimulationLoop';
@@ -7,10 +8,23 @@ export class ToolManager {
   private activeTool: ToolType = 'INSPECT';
   private flux: number;
   private fluxCap: number;
+  private modifiers: GameModifiers = {
+    growthCostMultiplier: 1.0,
+    toolCostMultiplier: 1.0,
+    fluxGainMultiplier: 1.0,
+  };
 
   constructor() {
     this.flux = C.STARTING_FLUX;
     this.fluxCap = C.STARTING_FLUX_CAP;
+  }
+
+  setModifiers(m: GameModifiers): void {
+    this.modifiers = m;
+  }
+
+  setFluxCapBonus(bonus: number): void {
+    this.fluxCap = C.STARTING_FLUX_CAP + bonus;
   }
 
   selectTool(tool: ToolType): void {
@@ -22,7 +36,12 @@ export class ToolManager {
   getFluxCap(): number { return this.fluxCap; }
 
   addFlux(amount: number): void {
-    this.flux = Math.min(this.flux + amount, this.fluxCap);
+    const modified = amount * this.modifiers.fluxGainMultiplier;
+    this.flux = Math.min(this.flux + modified, this.fluxCap);
+  }
+
+  deductFlux(amount: number): void {
+    this.flux = Math.max(0, this.flux - amount);
   }
 
   canAfford(tool: ToolType): boolean {
@@ -36,7 +55,7 @@ export class ToolManager {
     const tool = this.activeTool;
     if (tool === 'INSPECT') return false;
 
-    const cost = TOOL_CONFIGS[tool].fluxCost;
+    const cost = Math.floor(TOOL_CONFIGS[tool].fluxCost * this.modifiers.toolCostMultiplier);
     if (this.flux < cost) return false;
 
     const cell = sim.getGrid().getCell(hex.q, hex.r);

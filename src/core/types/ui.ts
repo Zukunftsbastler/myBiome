@@ -41,6 +41,11 @@ export interface PlayerProfile {
   
   // Skilltree-Fortschritt (Was kann das UI anzeigen?)
   capabilities: UICapabilities;
+
+  // Campaign progress
+  acquiredSkills: string[];
+  completedQuests: string[];
+  researchPoints: number;
 }
 
 export interface InventoryItem {

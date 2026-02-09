@@ -1,6 +1,7 @@
 import { Application, Container, Graphics, Sprite } from 'pixi.js';
 import type { SimulationState } from '@core/types/simulation';
 import type { HexCoord } from '@core/types';
+import type { BiomeZone } from '@systems/BiomeZoneSystem';
 import { hexToPixel, pixelToHex, hexCorners, HEX_SIZE } from './hexLayout';
 import { Synthesizer, hslToHex } from './Synthesizer';
 
@@ -19,6 +20,8 @@ export class Renderer {
   private _app: Application;
   private worldContainer: Container;
   private gridLayer: Container;
+  private zoneLayer: Container;
+  private zoneGfx: Graphics;
   private entityLayer: Container;
   private overlayLayer: Container;
 
@@ -45,6 +48,9 @@ export class Renderer {
     this._app = new Application();
     this.worldContainer = new Container();
     this.gridLayer = new Container();
+    this.zoneLayer = new Container();
+    this.zoneGfx = new Graphics();
+    this.zoneLayer.addChild(this.zoneGfx);
     this.entityLayer = new Container();
     this.overlayLayer = new Container();
     this.selectionGfx = new Graphics();
@@ -69,7 +75,7 @@ export class Renderer {
     container.appendChild(this._app.canvas);
 
     // Scene graph
-    this.worldContainer.addChild(this.gridLayer, this.entityLayer, this.overlayLayer, this.hoverGfx, this.selectionGfx);
+    this.worldContainer.addChild(this.gridLayer, this.zoneLayer, this.entityLayer, this.overlayLayer, this.hoverGfx, this.selectionGfx);
     this._app.stage.addChild(this.worldContainer);
 
     // Center camera
@@ -209,7 +215,7 @@ export class Renderer {
 
   // ── Update ──
 
-  update(state: SimulationState): void {
+  update(state: SimulationState, prunedGenomeIds?: string[]): void {
     // Update cell colors
     for (const [key, cell] of state.cells) {
       const gfx = this.cellGraphics.get(key);
@@ -263,8 +269,9 @@ export class Renderer {
       if (entity.type === 'SEED') {
         sprite.scale.set(0.8);
       } else {
-        const scale = 0.3 + (entity.biomass / (genome.maxHeight * 2)) * 1.7;
-        sprite.scale.set(Math.min(scale, 2.0));
+        const absoluteHeight = Math.min(entity.biomass, genome.maxHeight);
+        const scale = 0.08 + absoluteHeight * 0.45;
+        sprite.scale.set(Math.min(scale, 2.5));
       }
     }
 
@@ -275,6 +282,11 @@ export class Renderer {
         this.entitySprites.delete(id);
         this.entityOffsets.delete(id);
       }
+    }
+
+    // Prune orphan genome textures
+    if (prunedGenomeIds && prunedGenomeIds.length > 0) {
+      this.synthesizer.pruneTextures(prunedGenomeIds);
     }
   }
 
@@ -342,6 +354,20 @@ export class Renderer {
     const { x, y } = hexToPixel(hex.q, hex.r);
     const corners = hexCorners(x, y, HEX_SIZE);
     this.hoverGfx.poly(corners).stroke({ width: 1, color: 0x00adb5, alpha: 0.4 });
+  }
+
+  // ── Zone Borders ──
+
+  updateZones(zones: BiomeZone[]): void {
+    this.zoneGfx.clear();
+    for (const zone of zones) {
+      // Draw all border segments of this zone as one batch
+      for (const [x1, y1, x2, y2] of zone.borderSegments) {
+        this.zoneGfx.moveTo(x1, y1);
+        this.zoneGfx.lineTo(x2, y2);
+      }
+      this.zoneGfx.stroke({ width: 3, color: zone.color, alpha: 0.85 });
+    }
   }
 
   // ── Cleanup ──

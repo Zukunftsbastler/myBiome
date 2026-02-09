@@ -1,11 +1,16 @@
 import { HexCoord } from './vectors';
 
-export type SimulationEventType = 
-  | 'ENTITY_SPAWNED' 
-  | 'ENTITY_DIED' 
-  | 'CLIMATE_CHANGE' 
+export type SimulationEventType =
+  | 'ENTITY_SPAWNED'
+  | 'ENTITY_DIED'
+  | 'CLIMATE_CHANGE'
   | 'INTERACTION'
-  | 'FLUX_GAINED'; // <--- NEU: Für UI-Feedback
+  | 'FLUX_GAINED'
+  | 'QUEST_COMPLETED'
+  | 'SKILL_ACQUIRED'
+  | 'LEVEL_COMPLETED'
+  | 'LEVEL_FAILED'
+  | 'INVASION_SEED';
 
 export interface SimulationEvent {
   tick: number;

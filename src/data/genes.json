@@ -37,7 +37,7 @@
     "sugarContent": 0.5,
     "signalingColor": 0.7,
     "germinationVariance": 0.5,
-    "footprint": 0.8,
+    "footprint": 0.35,
     "colorHue": 100,
     "maxHeight": 5.0
   },

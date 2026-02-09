@@ -1,0 +1,76 @@
+[
+  {
+    "id": "first_sprout",
+    "title": "Erster Spross",
+    "description": "Lasse 3 Entitäten gleichzeitig wachsen.",
+    "trigger": {
+      "type": "THRESHOLD_REACHED",
+      "target": "entity_count",
+      "value": 3
+    },
+    "reward": {
+      "flux": 50
+    }
+  },
+  {
+    "id": "green_carpet",
+    "title": "Grüner Teppich",
+    "description": "Erreiche eine Gesamt-Biomasse von 5.0.",
+    "trigger": {
+      "type": "THRESHOLD_REACHED",
+      "target": "total_biomass",
+      "value": 5.0
+    },
+    "reward": {
+      "flux": 100,
+      "unlockSkill": "bio_tier1"
+    },
+    "prerequisiteQuestId": "first_sprout"
+  },
+  {
+    "id": "stable_water",
+    "title": "Stabiles Wasser",
+    "description": "Halte den durchschnittlichen Wasserstand über 0.4 für 100 Ticks.",
+    "trigger": {
+      "type": "STABILITY_CHECK",
+      "target": "avg_water",
+      "value": 0.4,
+      "duration": 100
+    },
+    "reward": {
+      "flux": 150,
+      "unlockSkill": "eng_tier1"
+    },
+    "prerequisiteQuestId": "first_sprout"
+  },
+  {
+    "id": "biodiversity",
+    "title": "Biodiversität",
+    "description": "Habe mindestens 3 verschiedene Genome gleichzeitig aktiv.",
+    "trigger": {
+      "type": "THRESHOLD_REACHED",
+      "target": "unique_genomes",
+      "value": 3
+    },
+    "reward": {
+      "flux": 200,
+      "unlockSkill": "sci_tier1"
+    },
+    "prerequisiteQuestId": "green_carpet"
+  },
+  {
+    "id": "thriving_ecosystem",
+    "title": "Blühendes Ökosystem",
+    "description": "Halte mindestens 20 Entitäten für 200 Ticks am Leben.",
+    "trigger": {
+      "type": "STABILITY_CHECK",
+      "target": "entity_count",
+      "value": 20,
+      "duration": 200
+    },
+    "reward": {
+      "flux": 500
+    },
+    "prerequisiteQuestId": "biodiversity"
+  }
+]

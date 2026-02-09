@@ -7,6 +7,12 @@ interface BarConfig {
   color: string;
 }
 
+export interface InspectorEntityInfo {
+  entity: Entity;
+  genome: Genome;
+  count: number; // how many entities of this species on the tile
+}
+
 export class Inspector {
   private root: HTMLElement;
   private titleEl: HTMLElement;
@@ -25,12 +31,34 @@ export class Inspector {
     container.appendChild(this.root);
   }
 
-  show(cell: CellData, entity?: Entity, genome?: Genome): void {
+  show(cell: CellData, species?: InspectorEntityInfo[], zoneName?: string, zoneColor?: number): void {
     this.root.classList.add('inspector--visible');
     this.bodyEl.innerHTML = '';
 
-    if (entity && genome) {
-      this.showEntity(entity, genome, cell);
+    if (species && species.length > 0) {
+      this.titleEl.textContent = `Tile (${cell.position.q}, ${cell.position.r})`;
+
+      if (zoneName != null && zoneColor != null) {
+        const zoneEl = document.createElement('div');
+        zoneEl.className = 'inspector__zone';
+        const dot = document.createElement('span');
+        dot.className = 'inspector__zone-dot';
+        dot.style.backgroundColor = `#${zoneColor.toString(16).padStart(6, '0')}`;
+        const label = document.createElement('span');
+        label.textContent = zoneName;
+        zoneEl.append(dot, label);
+        this.bodyEl.appendChild(zoneEl);
+      }
+
+      for (const sp of species) {
+        this.showEntity(sp.entity, sp.genome, sp.count);
+      }
+      // Cell summary at bottom
+      const cellBars: BarConfig[] = [
+        { label: 'Water',    value: cell.water,    max: 1, color: '#4488cc' },
+        { label: 'Nutrients',value: cell.nutrients, max: 1, color: '#44aa44' },
+      ];
+      this.bodyEl.appendChild(this.createSection('Cell', cellBars));
     } else {
       this.showCell(cell);
     }
@@ -38,11 +66,6 @@ export class Inspector {
 
   hide(): void {
     this.root.classList.remove('inspector--visible');
-  }
-
-  update(cell: CellData, entity?: Entity, genome?: Genome): void {
-    if (!this.root.classList.contains('inspector--visible')) return;
-    this.show(cell, entity, genome);
   }
 
   // ── Cell View ──
@@ -67,8 +90,11 @@ export class Inspector {
 
   // ── Entity View ──
 
-  private showEntity(entity: Entity, genome: Genome, cell: CellData): void {
-    this.titleEl.textContent = `${genome.name} (${entity.type})`;
+  private showEntity(entity: Entity, genome: Genome, count: number): void {
+    const header = document.createElement('div');
+    header.className = 'inspector__section-title';
+    header.textContent = `${genome.name} (${entity.type}) x${count}`;
+    this.bodyEl.appendChild(header);
 
     // Vitals
     const vitals: BarConfig[] = [
@@ -79,16 +105,6 @@ export class Inspector {
     ];
     this.bodyEl.appendChild(this.createSection('Vitals', vitals));
 
-    // Info line
-    const info = document.createElement('div');
-    info.className = 'inspector__section';
-    info.innerHTML = `<div class="inspector__section-title">Info</div>`;
-    const infoText = document.createElement('div');
-    infoText.style.cssText = 'font-size:10px;color:#aaa;';
-    infoText.textContent = `Age: ${entity.age} | ID: ${entity.id} | Genome: ${entity.genomeId}`;
-    info.appendChild(infoText);
-    this.bodyEl.appendChild(info);
-
     // Genome traits
     const traits: BarConfig[] = [
       { label: 'Lignin',   value: genome.ligninInvestment,         max: 1, color: '#886644' },
@@ -98,13 +114,6 @@ export class Inspector {
       { label: 'Toxicity', value: genome.toxicity,                 max: 1, color: '#cc4488' },
     ];
     this.bodyEl.appendChild(this.createSection('Traits', traits));
-
-    // Cell summary
-    const cellBars: BarConfig[] = [
-      { label: 'Water',    value: cell.water,    max: 1, color: '#4488cc' },
-      { label: 'Nutrients',value: cell.nutrients, max: 1, color: '#44aa44' },
-    ];
-    this.bodyEl.appendChild(this.createSection('Cell', cellBars));
   }
 
   // ── Helpers ──

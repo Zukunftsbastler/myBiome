@@ -1,6 +1,6 @@
 import type { CellData, HexCoord, Entity, Genome } from '@core/types';
 import type { GridInitConfig } from '@core/types/simulation';
-import { hexKey, hexNeighbors, hexesInRadius, clamp, deriveShadeContribution } from '@core/math/simulationUtils';
+import { hexKey, hexNeighbors, hexesInRadius, hexRing, clamp, deriveShadeContribution } from '@core/math/simulationUtils';
 
 export class GridManager {
   private cells: Map<string, CellData> = new Map();
@@ -26,6 +26,9 @@ export class GridManager {
         toxin: 0,
         shade: 0,
         occupancy: 0,
+        understoryOccupancy: 0,
+        canopyOccupancy: 0,
+        canopyHeight: 0,
       });
       this.entityIndex.set(key, new Set());
     }
@@ -51,10 +54,13 @@ export class GridManager {
     const cell = this.cells.get(key);
     if (!cell) return;
 
+    const unclampedFields = new Set(['canopyHeight']);
     for (const [field, value] of Object.entries(updates)) {
       if (field === 'position') continue;
       if (typeof value !== 'number') continue;
-      (cell as unknown as Record<string, number>)[field] = clamp(value, 0, 1);
+      (cell as unknown as Record<string, number>)[field] = unclampedFields.has(field)
+        ? Math.max(0, value)
+        : clamp(value, 0, 1);
     }
   }
 
@@ -98,11 +104,24 @@ export class GridManager {
     return this.entityIndex.get(hexKey(q, r)) ?? new Set();
   }
 
+  /** Return cells on the outermost ring of the hex grid. */
+  getEdgeCells(radius: number): CellData[] {
+    const ring = hexRing({ q: 0, r: 0 }, radius);
+    const results: CellData[] = [];
+    for (const pos of ring) {
+      const cell = this.cells.get(hexKey(pos.q, pos.r));
+      if (cell) results.push(cell);
+    }
+    return results;
+  }
+
   // ── Occupancy & Shade Recalculation ──
 
   recalculateOccupancy(entities: ReadonlyMap<number, Entity>, genomes: ReadonlyMap<string, Genome>): void {
     for (const cell of this.cells.values()) {
       cell.occupancy = 0;
+      cell.understoryOccupancy = 0;
+      cell.canopyOccupancy = 0;
     }
 
     for (const entity of entities.values()) {
@@ -113,13 +132,20 @@ export class GridManager {
       if (!cell) continue;
       const genome = genomes.get(entity.genomeId);
       if (!genome) continue;
-      cell.occupancy = clamp(cell.occupancy + genome.footprint, 0, 1);
+
+      if (genome.maxHeight >= 1.0) {
+        cell.canopyOccupancy = clamp(cell.canopyOccupancy + genome.footprint, 0, 1);
+      } else {
+        cell.understoryOccupancy = clamp(cell.understoryOccupancy + genome.footprint, 0, 1);
+      }
+      cell.occupancy = clamp(cell.understoryOccupancy + cell.canopyOccupancy, 0, 1);
     }
   }
 
   recalculateShade(entities: ReadonlyMap<number, Entity>, genomes: ReadonlyMap<string, Genome>): void {
     for (const cell of this.cells.values()) {
       cell.shade = 0;
+      cell.canopyHeight = 0;
     }
 
     for (const entity of entities.values()) {
@@ -127,21 +153,26 @@ export class GridManager {
       const genome = genomes.get(entity.genomeId);
       if (!genome) continue;
 
+      const plantHeight = Math.min(entity.biomass, genome.maxHeight);
       const contribution = deriveShadeContribution(genome, entity.biomass);
-      if (contribution <= 0) continue;
 
-      // Shade self cell
+      // Track canopy height per cell
       const selfKey = hexKey(entity.position.q, entity.position.r);
       const selfCell = this.cells.get(selfKey);
       if (selfCell) {
-        selfCell.shade = clamp(selfCell.shade + contribution, 0, 1);
+        selfCell.canopyHeight = Math.max(selfCell.canopyHeight, plantHeight);
+        if (contribution > 0) {
+          selfCell.shade = clamp(selfCell.shade + contribution, 0, 1);
+        }
       }
 
-      // Shade neighbors (reduced)
-      for (const n of hexNeighbors(entity.position)) {
-        const nCell = this.cells.get(hexKey(n.q, n.r));
-        if (nCell) {
-          nCell.shade = clamp(nCell.shade + contribution * 0.5, 0, 1);
+      // Shade neighbors — only plants tall enough cast neighbor shade
+      if (contribution > 0 && plantHeight > 0.3) {
+        for (const n of hexNeighbors(entity.position)) {
+          const nCell = this.cells.get(hexKey(n.q, n.r));
+          if (nCell) {
+            nCell.shade = clamp(nCell.shade + contribution * 0.5, 0, 1);
+          }
         }
       }
     }

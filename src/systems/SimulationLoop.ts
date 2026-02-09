@@ -1,9 +1,12 @@
-import type { Entity, Genome, SimulationEvent, WorldConfig, HexCoord, CellData } from '@core/types';
+import type { Entity, Genome, SimulationEvent, WorldConfig, HexCoord, CellData, ScenarioConfig, ScenarioStatus, ObjectiveProgress } from '@core/types';
 import type { PRNG, WeatherState, TickResult, SimulationState, GridInitConfig } from '@core/types/simulation';
 import { GridManager } from '@core/grid/GridManager';
+import { TerrainGenerator } from '@core/grid/TerrainGenerator';
 import { EnvironmentSystem } from './EnvironmentSystem';
 import { VegetationSystem } from './VegetationSystem';
-import { createPRNG } from '@core/math/simulationUtils';
+import { InvasionSystem } from './InvasionSystem';
+import { ObjectiveTracker } from './ObjectiveTracker';
+import { createPRNG, generateRandomGenome } from '@core/math/simulationUtils';
 import { SIM_CONSTANTS as C } from '@core/math/constants';
 
 export class SimulationLoop {
@@ -19,8 +22,12 @@ export class SimulationLoop {
 
   private environmentSystem: EnvironmentSystem;
   private vegetationSystem: VegetationSystem;
+  private invasionSystem: InvasionSystem;
+  private objectiveTracker: ObjectiveTracker;
 
   private config: WorldConfig;
+  private activeScenario: ScenarioConfig | null = null;
+  private lastScenarioStatus: ScenarioStatus | null = null;
 
   constructor(config: WorldConfig, seed: number = 42) {
     this.config = config;
@@ -28,6 +35,8 @@ export class SimulationLoop {
     this.grid = new GridManager();
     this.environmentSystem = new EnvironmentSystem();
     this.vegetationSystem = new VegetationSystem();
+    this.invasionSystem = new InvasionSystem();
+    this.objectiveTracker = new ObjectiveTracker();
 
     // Initialise grid
     const gridConfig: GridInitConfig = {
@@ -39,6 +48,83 @@ export class SimulationLoop {
       defaultSurfaceRoughness: C.DEFAULT_SURFACE_ROUGHNESS,
     };
     this.grid.init(gridConfig);
+  }
+
+  // ── Scenario Lifecycle ──
+
+  loadScenario(scenarioConfig: ScenarioConfig, extraGenomes?: Genome[]): void {
+    // Reset state
+    this.tick = 0;
+    this.totalFlux = 0;
+    this.nextEntityId = 1;
+    this.entities.clear();
+    this.genomes.clear();
+    this.lastScenarioStatus = null;
+    this.activeScenario = scenarioConfig;
+
+    // Re-seed PRNG
+    this.rng = createPRNG(scenarioConfig.mapConfig.seed ?? 42);
+
+    // Re-init grid with scenario size
+    const gridConfig: GridInitConfig = {
+      radius: scenarioConfig.mapConfig.size,
+      defaultWater: C.DEFAULT_WATER,
+      defaultNutrients: C.DEFAULT_NUTRIENTS,
+      defaultGranularity: C.DEFAULT_GRANULARITY,
+      defaultOrganicSaturation: C.DEFAULT_ORGANIC_SATURATION,
+      defaultSurfaceRoughness: C.DEFAULT_SURFACE_ROUGHNESS,
+    };
+    this.grid.init(gridConfig);
+
+    // Apply terrain
+    TerrainGenerator.generate(this.grid, scenarioConfig.mapConfig, this.rng);
+
+    // Update config map size
+    this.config = { ...this.config, mapSize: scenarioConfig.mapConfig.size };
+
+    // Register extra genomes (invasion genomes, etc.)
+    if (extraGenomes) {
+      this.registerGenomes(extraGenomes);
+    }
+
+    // Register starting genomes — they must be already in the genome registry
+    // (caller should register them before or pass via extraGenomes)
+
+    // Configure invasion system
+    this.invasionSystem.setConfig(
+      scenarioConfig.invasion ?? null,
+      scenarioConfig.mapConfig.size,
+    );
+
+    // Configure objective tracker
+    this.objectiveTracker.loadScenario(scenarioConfig);
+
+    // Place starting entities
+    if (scenarioConfig.startingPlacements) {
+      for (const placement of scenarioConfig.startingPlacements) {
+        this.spawnEntity(placement.type, placement.genomeId, placement.position);
+      }
+    }
+  }
+
+  unloadScenario(): void {
+    this.activeScenario = null;
+    this.lastScenarioStatus = null;
+    this.invasionSystem.reset();
+    this.objectiveTracker.reset();
+  }
+
+  getScenarioStatus(): ScenarioStatus | null {
+    if (!this.objectiveTracker.isActive()) return null;
+    return this.lastScenarioStatus ?? this.objectiveTracker.getStatus();
+  }
+
+  getObjectives(): readonly ObjectiveProgress[] {
+    return this.objectiveTracker.getObjectives();
+  }
+
+  hasActiveScenario(): boolean {
+    return this.activeScenario !== null;
   }
 
   // ── Genome Registry ──
@@ -103,6 +189,7 @@ export class SimulationLoop {
       this.weather,
       this.tick,
       this.rng,
+      this.config,
     );
 
     if (vegResult.newGenomes.length > 0) {
@@ -115,9 +202,6 @@ export class SimulationLoop {
     // Process spawns (seeds from reproduction / germination)
     for (const spawn of vegResult.entitiesToSpawn) {
       if (spawn.type === 'SEED') {
-        // If this came from germination (the seed itself is being removed),
-        // spawn a PLANT. Otherwise spawn a SEED.
-        // Determine: if there's a matching removal for a seed at this position, it's germination
         const isGermination = vegResult.entitiesToRemove.some(rid => {
           const e = this.entities.get(rid);
           return e && e.type === 'SEED' && e.position.q === spawn.position.q && e.position.r === spawn.position.r;
@@ -140,6 +224,45 @@ export class SimulationLoop {
       }
     }
 
+    // 4. Invasion system (after vegetation, deterministic PRNG order)
+    const invasionResult = this.invasionSystem.update(
+      this.grid,
+      this.entities,
+      this.tick,
+      this.rng,
+    );
+
+    for (const spawn of invasionResult.entitiesToSpawn) {
+      this.spawnEntity('SEED', spawn.genomeId, spawn.position);
+    }
+    events.push(...invasionResult.events);
+
+    // Natural seed arrival ("Sporen im Wind") — only base genomes (no _v variants)
+    if (this.rng() < C.NATURAL_SEED_CHANCE) {
+      const baseIds = Array.from(this.genomes.keys()).filter(id => !id.includes('_v') && !id.startsWith('exotic_'));
+      if (baseIds.length > 0) {
+        const genomeId = baseIds[Math.floor(this.rng() * baseIds.length)];
+        const allCells = Array.from(this.grid.getAllCells());
+        const target = allCells[Math.floor(this.rng() * allCells.length)];
+        this.spawnEntity('SEED', genomeId, target.position);
+      }
+    }
+
+    // Exotic seed arrival — completely random new species, spawned as plant
+    if (this.tick % C.EXOTIC_SEED_INTERVAL === 0 && this.rng() < C.EXOTIC_SEED_CHANCE) {
+      const exotic = generateRandomGenome(this.rng);
+      this.registerGenome(exotic);
+      const allCells = Array.from(this.grid.getAllCells());
+      const target = allCells[Math.floor(this.rng() * allCells.length)];
+      this.spawnEntity('PLANT', exotic.id, target.position);
+      events.push({
+        tick: this.tick,
+        type: 'ENTITY_SPAWNED',
+        location: target.position,
+        messageKey: `Fremdeintrag: ${exotic.name}`,
+      });
+    }
+
     // Also clean up entities flagged as dead but not in removal list
     for (const entity of this.entities.values()) {
       if (entity.isDead) {
@@ -148,13 +271,66 @@ export class SimulationLoop {
       }
     }
 
+    // 5. Objective tracking (periodic check)
+    if (this.objectiveTracker.isActive() && this.tick % C.OBJECTIVE_CHECK_INTERVAL === 0) {
+      const outcome = this.objectiveTracker.check(
+        this.tick,
+        this.grid,
+        this.entities,
+        this.genomes,
+        this.totalFlux,
+      );
+      if (outcome) {
+        this.lastScenarioStatus = outcome;
+        if (outcome.outcome === 'WON') {
+          events.push({
+            tick: this.tick,
+            type: 'LEVEL_COMPLETED',
+            messageKey: 'Szenario abgeschlossen!',
+          });
+        } else if (outcome.outcome === 'LOST') {
+          events.push({
+            tick: this.tick,
+            type: 'LEVEL_FAILED',
+            messageKey: `Szenario verloren: ${outcome.loseCause}`,
+          });
+        }
+      }
+    }
+
+    // Genome garbage collection every 100 ticks
+    let prunedGenomeIds: string[] | undefined;
+    if (this.tick % 100 === 0) {
+      prunedGenomeIds = this.pruneOrphanGenomes();
+    }
+
     return {
       tick: this.tick,
       entityCount: this.entities.size,
       fluxGenerated: vegResult.fluxGenerated,
       events,
       weather: { ...this.weather },
+      prunedGenomeIds,
     };
+  }
+
+  // ── Genome GC ──
+
+  private pruneOrphanGenomes(): string[] {
+    const activeGenomeIds = new Set<string>();
+    for (const entity of this.entities.values()) {
+      activeGenomeIds.add(entity.genomeId);
+    }
+
+    const pruned: string[] = [];
+    for (const id of this.genomes.keys()) {
+      // Prune variant and exotic genomes with no living entities, keep base genomes
+      if ((id.includes('_v') || id.startsWith('exotic_')) && !activeGenomeIds.has(id)) {
+        this.genomes.delete(id);
+        pruned.push(id);
+      }
+    }
+    return pruned;
   }
 
   // ── Read-Only Queries ──
@@ -164,7 +340,7 @@ export class SimulationLoop {
       tick: this.tick,
       weather: { ...this.weather },
       entities: this.entities,
-      cells: this.grid['cells'] as ReadonlyMap<string, any>,
+      cells: this.grid['cells'] as ReadonlyMap<string, CellData>,
       genomes: this.genomes,
       totalFlux: this.totalFlux,
       config: this.config,

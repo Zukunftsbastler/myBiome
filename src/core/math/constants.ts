@@ -32,7 +32,7 @@ export const SIM_CONSTANTS = Object.freeze({
   SEED_DISPERSAL_RADIUS: 2,
 
   // --- Trait Upkeep ---
-  NITROGEN_FIXATION_COST: 0.1,
+  NITROGEN_FIXATION_COST: 0.04,
   TOXIN_UPKEEP_COST: 0.03,
   RADIATION_UPKEEP_COST: 0.01,
 
@@ -93,5 +93,18 @@ export const SIM_CONSTANTS = Object.freeze({
 
   // --- Water Consumption ---
   WATER_CONSUMPTION_RATE: 0.02,
-  NUTRIENT_CONSUMPTION_RATE: 0.01,
+  NUTRIENT_CONSUMPTION_RATE: 0.05,
+
+  // --- Natural Seed Arrival ---
+  NATURAL_SEED_CHANCE: 0.01,
+  EXOTIC_SEED_CHANCE: 0.5,
+  EXOTIC_SEED_INTERVAL: 30,
+
+  // --- Saprophyte ---
+  SAPROPHYTE_RATE: 0.08,
+  SAPROPHYTE_DEPLETION_RATE: 1.0,
+  SAPROPHYTE_BMR_PENALTY: 0.02,
+
+  // --- Scenario ---
+  OBJECTIVE_CHECK_INTERVAL: 60,
 });

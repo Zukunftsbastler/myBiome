@@ -8,3 +8,5 @@ export * from './entity';
 export * from './events';
 export * from './ui';
 export * from './simulation';
+export * from './campaign';
+export * from './scenario';

@@ -1,0 +1,107 @@
+[
+  {
+    "id": "bio_tier1",
+    "path": "BIOLOGY",
+    "tier": 1,
+    "name": "Samen-Selektion",
+    "description": "Verbessert das Seed-Tool: Samen können gezielt ausgewählt werden.",
+    "cost": 100,
+    "effects": [
+      { "type": "UNLOCK_TOOL", "toolType": "SEED" }
+    ]
+  },
+  {
+    "id": "bio_tier2",
+    "path": "BIOLOGY",
+    "tier": 2,
+    "name": "Effizienz-Steigerung",
+    "description": "Pflanzen wachsen 10% effizienter.",
+    "cost": 300,
+    "prerequisiteSkillId": "bio_tier1",
+    "effects": [
+      { "type": "MODIFIER", "target": "growthCostMultiplier", "value": 0.9 }
+    ]
+  },
+  {
+    "id": "bio_tier3",
+    "path": "BIOLOGY",
+    "tier": 3,
+    "name": "Gen-Labor",
+    "description": "Zeigt versteckte genetische Eigenschaften im Inspector.",
+    "cost": 1000,
+    "prerequisiteSkillId": "bio_tier2",
+    "effects": [
+      { "type": "UNLOCK_CAPABILITY", "capability": "showHiddenTraits", "value": true }
+    ]
+  },
+  {
+    "id": "eng_tier1",
+    "path": "ENGINEERING",
+    "tier": 1,
+    "name": "Wasser-Kondensatoren",
+    "description": "Hydrate-Tool kostet 20% weniger Flux.",
+    "cost": 100,
+    "effects": [
+      { "type": "MODIFIER", "target": "toolCostMultiplier", "value": 0.8 }
+    ]
+  },
+  {
+    "id": "eng_tier2",
+    "path": "ENGINEERING",
+    "tier": 2,
+    "name": "Atmosphären-Wandler",
+    "description": "Flux-Ertrag aus der Simulation +20%.",
+    "cost": 300,
+    "prerequisiteSkillId": "eng_tier1",
+    "effects": [
+      { "type": "MODIFIER", "target": "fluxGainMultiplier", "value": 1.2 }
+    ]
+  },
+  {
+    "id": "eng_tier3",
+    "path": "ENGINEERING",
+    "tier": 3,
+    "name": "Orbital-Spiegel",
+    "description": "Erhöht das Flux-Speicherlimit um 500.",
+    "cost": 1000,
+    "prerequisiteSkillId": "eng_tier2",
+    "effects": [
+      { "type": "UNLOCK_FLUX_CAP", "amount": 500 }
+    ]
+  },
+  {
+    "id": "sci_tier1",
+    "path": "SCIENCE",
+    "tier": 1,
+    "name": "Basis-Sensorik",
+    "description": "Inspector zeigt nun Feuchtigkeitswerte an.",
+    "cost": 100,
+    "effects": [
+      { "type": "UNLOCK_CAPABILITY", "capability": "showMoistureValues", "value": true }
+    ]
+  },
+  {
+    "id": "sci_tier2",
+    "path": "SCIENCE",
+    "tier": 2,
+    "name": "Kausale Logik",
+    "description": "Inspector zeigt Nährstoffwerte an.",
+    "cost": 300,
+    "prerequisiteSkillId": "sci_tier1",
+    "effects": [
+      { "type": "UNLOCK_CAPABILITY", "capability": "showNutrientValues", "value": true }
+    ]
+  },
+  {
+    "id": "sci_tier3",
+    "path": "SCIENCE",
+    "tier": 3,
+    "name": "Präkognition",
+    "description": "Historien-Graphen werden freigeschaltet.",
+    "cost": 1000,
+    "prerequisiteSkillId": "sci_tier2",
+    "effects": [
+      { "type": "UNLOCK_CAPABILITY", "capability": "showGraphs", "value": true }
+    ]
+  }
+]

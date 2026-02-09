@@ -1,9 +1,10 @@
-import type { Entity, Genome, SimulationEvent, HexCoord } from '@core/types';
+import type { Entity, Genome, SimulationEvent, HexCoord, WorldConfig } from '@core/types';
 import type { PRNG, WeatherState } from '@core/types/simulation';
 import { GridManager } from '@core/grid/GridManager';
 import { SIM_CONSTANTS as C } from '@core/math/constants';
 import {
   calculatePhotosynthesis,
+  calculateSaprophyteGain,
   calculateBMR,
   calculateTraitUpkeep,
   calculateMaxStorage,
@@ -34,6 +35,7 @@ export class VegetationSystem {
     weather: WeatherState,
     tick: number,
     rng: PRNG,
+    config: WorldConfig,
   ): VegetationTickResult {
     let fluxGenerated = 0;
     const events: SimulationEvent[] = [];
@@ -47,7 +49,7 @@ export class VegetationSystem {
       if (entity.type === 'SEED') {
         this.processSeed(entity, genomes, grid, weather, tick, rng, events, entitiesToSpawn, entitiesToRemove);
       } else if (entity.type === 'PLANT') {
-        const result = this.processPlant(entity, genomes, grid, weather, tick, rng, events, entitiesToSpawn, newGenomes);
+        const result = this.processPlant(entity, genomes, grid, weather, tick, rng, events, entitiesToSpawn, newGenomes, config);
         fluxGenerated += result.flux;
         if (result.dead) {
           entitiesToRemove.push(entity.id);
@@ -123,6 +125,7 @@ export class VegetationSystem {
     events: SimulationEvent[],
     spawns: VegetationTickResult['entitiesToSpawn'],
     newGenomes: Genome[],
+    config: WorldConfig,
   ): { flux: number; dead: boolean } {
     const genome = genomes.get(entity.genomeId);
     if (!genome) return { flux: 0, dead: false };
@@ -135,8 +138,7 @@ export class VegetationSystem {
     let tickFlux = 0;
 
     // --- Income ---
-    const photoGain = calculatePhotosynthesis(genome, entity, cell, weather);
-    entity.energy += photoGain;
+    let photoGain = calculatePhotosynthesis(genome, entity, cell, weather);
 
     // Water consumption
     const waterNeed = deriveWaterNeed(genome, entity.biomass) * C.WATER_CONSUMPTION_RATE;
@@ -151,6 +153,20 @@ export class VegetationSystem {
     grid.mutateCell(cell.position.q, cell.position.r, {
       nutrients: cell.nutrients - nutrientConsumed,
     });
+
+    // Nutrient factor: limits photosynthesis and growth
+    const nutrientFactor = nutrientNeed > 0 ? Math.min(1.0, nutrientConsumed / nutrientNeed) : 1.0;
+    photoGain *= (0.5 + nutrientFactor * 0.5);
+    entity.energy += photoGain;
+
+    // Saprophyte energy (fungi decompose organic matter)
+    const sapGain = calculateSaprophyteGain(genome, entity, cell);
+    if (sapGain > 0) {
+      entity.energy += sapGain;
+      grid.mutateCell(cell.position.q, cell.position.r, {
+        organicSaturation: cell.organicSaturation - sapGain * C.SAPROPHYTE_DEPLETION_RATE,
+      });
+    }
 
     // --- Expenses ---
     const bmr = calculateBMR(genome, entity);
@@ -167,7 +183,7 @@ export class VegetationSystem {
     const energyRatio = maxStorage > 0 ? entity.energy / maxStorage : 0;
 
     if (entity.biomass < genome.maxHeight && energyRatio > 0.3) {
-      const deltaVol = C.BASE_GROWTH_INCREMENT * growthSpeed;
+      const deltaVol = C.BASE_GROWTH_INCREMENT * growthSpeed * nutrientFactor;
       const growCost = calculateGrowthCost(genome, deltaVol);
 
       if (entity.energy >= growCost) {
@@ -194,9 +210,9 @@ export class VegetationSystem {
           const target = validTargets[Math.floor(rng() * validTargets.length)];
           let childGenomeId = entity.genomeId;
 
-          // Mutation: 20% Chance (oder aus Config laden)
-          if (rng() < 0.2) {
-            const mutated = mutateGenome(genome, 0.2, rng);
+          // Mutation chance from config
+          if (rng() < config.mutationRate) {
+            const mutated = mutateGenome(genome, config.mutationRate, rng, genomes);
             newGenomes.push(mutated); 
             childGenomeId = mutated.id;
             

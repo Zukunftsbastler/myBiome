@@ -19,4 +19,7 @@ export interface CellData {
   // Lokales Klima & Belegung
   shade: number;             // 0.0 (Sonne) - 1.0 (Vollschatten)
   occupancy: number;         // Summe der Footprints (0.0 - 1.0)
+  understoryOccupancy: number; // Belegung durch niedrige Pflanzen (maxHeight < 1.0)
+  canopyOccupancy: number;     // Belegung durch hohe Pflanzen (maxHeight >= 1.0)
+  canopyHeight: number;      // Höhe der höchsten Pflanze auf dieser Zelle
 }

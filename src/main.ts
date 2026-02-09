@@ -1,11 +1,17 @@
 import { SimulationLoop } from '@systems/SimulationLoop';
-import type { Genome, WorldConfig, HexCoord, SelectionState } from '@core/types';
+import { BiomeZoneSystem, type BiomeZone } from '@systems/BiomeZoneSystem';
+import type { Entity, Genome, WorldConfig, HexCoord, SpeedLevel, ScenarioConfig } from '@core/types';
+import type { TickResult } from '@core/types/simulation';
 import starterGenomes from '@data/genes.json';
+import { INVASION_GENOMES } from '@data/invasionGenomes';
 import { Renderer } from '@vis/Renderer';
 import type { DataLens } from '@vis/Renderer';
 import { HUD } from '@ui/HUD';
-import { Inspector } from '@ui/Inspector';
+import { Inspector, type InspectorEntityInfo } from '@ui/Inspector';
+import { CampaignPanel } from '@ui/CampaignPanel';
 import { ToolManager } from './interaction/ToolManager';
+import { CampaignManager } from './interaction/CampaignManager';
+import { TimeManager } from '@core/time/TimeManager';
 
 // ── World Configuration ──
 const worldConfig: WorldConfig = {
@@ -23,21 +29,57 @@ sim.spawnEntity('PLANT', 'pioneer_clover', { q: 0, r: 0 });
 
 // ── Initialise Systems ──
 const renderer = new Renderer();
+const zoneSystem = new BiomeZoneSystem();
+let currentZones: BiomeZone[] = [];
 const toolManager = new ToolManager();
+const campaignManager = new CampaignManager();
 const appContainer = document.getElementById('app')!;
 const hudContainer = document.getElementById('hud')!;
 const hud = new HUD(hudContainer);
 const inspector = new Inspector(hudContainer);
+const campaignPanel = new CampaignPanel(hudContainer);
 
-let paused = false;
-let selection: SelectionState | null = null;
+let selectedHex: HexCoord | null = null;
+let latestTickResult: TickResult | null = null;
+
+// ── Time Manager ──
+const timeManager = new TimeManager(() => {
+  const tickResult = sim.step();
+  latestTickResult = tickResult;
+
+  // Accumulate flux from simulation
+  toolManager.addFlux(tickResult.fluxGenerated);
+
+  // Evaluate campaign quests
+  const state = sim.getState();
+  const campaignEvents = campaignManager.evaluateQuests(state, tickResult);
+  for (const evt of campaignEvents) {
+    if (evt.reward?.flux) {
+      toolManager.addFlux(evt.reward.flux);
+    }
+    toolManager.setModifiers(campaignManager.getModifiers());
+    hud.addEvent({
+      tick: evt.tick,
+      type: 'QUEST_COMPLETED',
+      messageKey: `Aufgabe abgeschlossen: ${evt.title}`,
+    });
+  }
+
+  // Auto-pause on scenario completion/failure
+  for (const event of tickResult.events) {
+    if (event.type === 'LEVEL_COMPLETED' || event.type === 'LEVEL_FAILED') {
+      timeManager.setSpeed('PAUSE');
+      hud.setActiveSpeed('PAUSE');
+    }
+  }
+});
 
 // ── Hex Click Handler ──
 function handleHexClick(hex: HexCoord): void {
   const cell = sim.getGrid().getCell(hex.q, hex.r);
   if (!cell) {
     // Clicked outside grid — deselect
-    selection = null;
+    selectedHex = null;
     renderer.setSelection(null);
     inspector.hide();
     return;
@@ -49,45 +91,85 @@ function handleHexClick(hex: HexCoord): void {
     hud.setFlux(toolManager.getFlux(), toolManager.getFluxCap());
   }
 
-  // Update selection
-  const entities = sim.getEntitiesAt(hex.q, hex.r);
-  const topEntity = entities.length > 0 ? entities[0] : undefined;
-
-  if (topEntity) {
-    selection = { type: 'entity', hex, entityId: topEntity.id };
-  } else {
-    selection = { type: 'cell', hex };
-  }
-
+  selectedHex = hex;
   renderer.setSelection(hex);
   updateInspector();
 }
 
 function updateInspector(): void {
-  if (!selection) {
+  if (!selectedHex) {
     inspector.hide();
     return;
   }
 
-  const cell = sim.getGrid().getCell(selection.hex.q, selection.hex.r);
+  const cell = sim.getGrid().getCell(selectedHex.q, selectedHex.r);
   if (!cell) {
     inspector.hide();
     return;
   }
 
-  if (selection.entityId) {
-    const entity = sim.getEntity(selection.entityId);
-    if (entity) {
-      const genome = sim.getGenome(entity.genomeId);
-      inspector.show(cell, entity, genome);
-      return;
-    }
-    // Entity died — fall back to cell
-    selection = { type: 'cell', hex: selection.hex };
-  }
+  // Always re-query entities at this hex
+  const entities = sim.getEntitiesAt(selectedHex.q, selectedHex.r);
+  const plants = entities.filter(e => e.type === 'PLANT');
 
-  inspector.show(cell);
+  if (plants.length > 0) {
+    // Group by genomeId, find top 2 most common species
+    const groups = new Map<string, Entity[]>();
+    for (const e of plants) {
+      const arr = groups.get(e.genomeId);
+      if (arr) arr.push(e);
+      else groups.set(e.genomeId, [e]);
+    }
+
+    const sorted = Array.from(groups.entries())
+      .sort((a, b) => b[1].length - a[1].length)
+      .slice(0, 2);
+
+    const speciesInfos: InspectorEntityInfo[] = [];
+    for (const [genomeId, members] of sorted) {
+      const genome = sim.getGenome(genomeId);
+      if (genome) {
+        // Pick the largest entity as representative
+        const rep = members.reduce((a, b) => a.biomass >= b.biomass ? a : b);
+        speciesInfos.push({ entity: rep, genome, count: members.length });
+      }
+    }
+
+    const zone = currentZones.find(z => z.cells.has(`${selectedHex!.q},${selectedHex!.r}`));
+    inspector.show(cell, speciesInfos, zone?.name, zone?.color);
+  } else {
+    inspector.show(cell);
+  }
 }
+
+// ── Scenario Loading ──
+function loadScenario(scenarioConfig: ScenarioConfig): void {
+  // Register invasion genomes
+  sim.registerGenomes(INVASION_GENOMES);
+  // Register starter genomes
+  sim.registerGenomes(starterGenomes as Genome[]);
+  // Load scenario (resets sim, applies terrain, places starting entities)
+  sim.loadScenario(scenarioConfig, [...INVASION_GENOMES, ...(starterGenomes as Genome[])]);
+
+  // Rebuild grid visuals
+  const state = sim.getState();
+  renderer.buildGrid(state);
+  renderer.update(state);
+
+  // Reset UI state
+  selectedHex = null;
+  renderer.setSelection(null);
+  inspector.hide();
+  hud.setFlux(toolManager.getFlux(), toolManager.getFluxCap());
+  hud.updateObjectives(Array.from(sim.getObjectives()));
+
+  // Start paused so player can survey the terrain
+  timeManager.setSpeed('PAUSE');
+  hud.setActiveSpeed('PAUSE');
+}
+
+// Expose for console/future UI
+(window as unknown as Record<string, unknown>).loadScenario = loadScenario;
 
 // ── Connect Callbacks ──
 renderer.setCallbacks({
@@ -100,6 +182,39 @@ hud.setCallbacks({
   },
   onLensChanged: (lens: DataLens) => {
     renderer.setLens(lens);
+  },
+  onCampaignToggle: () => {
+    campaignPanel.toggle();
+    if (campaignPanel.isVisible()) {
+      campaignPanel.update(campaignManager, toolManager.getFlux());
+    }
+  },
+  onSpeedChanged: (speed: SpeedLevel) => {
+    timeManager.setSpeed(speed);
+  },
+});
+
+campaignPanel.setCallbacks({
+  onSkillPurchase: (skillId) => {
+    const result = campaignManager.purchaseSkill(skillId, toolManager.getFlux());
+    if (result.success) {
+      toolManager.deductFlux(result.cost);
+      // Update modifiers
+      toolManager.setModifiers(campaignManager.getModifiers());
+      toolManager.setFluxCapBonus(campaignManager.getFluxCapBonus());
+      hud.setFlux(toolManager.getFlux(), toolManager.getFluxCap());
+      // Fire event to log
+      if (result.event) {
+        result.event.tick = sim.getState().tick;
+        hud.addEvent({
+          tick: result.event.tick,
+          type: 'SKILL_ACQUIRED',
+          messageKey: `Skill freigeschaltet: ${result.event.title}`,
+        });
+      }
+      // Refresh panel
+      campaignPanel.update(campaignManager, toolManager.getFlux());
+    }
   },
 });
 
@@ -114,13 +229,25 @@ document.addEventListener('keydown', (e: KeyboardEvent) => {
     case '3': hud.selectLens('TOXIN'); renderer.setLens('TOXIN'); break;
     case '0': hud.selectLens('OFF'); renderer.setLens('OFF'); break;
     case 'Escape':
-      selection = null;
+      selectedHex = null;
       renderer.setSelection(null);
       inspector.hide();
       break;
     case ' ':
       e.preventDefault();
-      paused = !paused;
+      {
+        const current = timeManager.getSpeed();
+        const next: SpeedLevel = current === 'PAUSE' ? 'PLAY' : 'PAUSE';
+        timeManager.setSpeed(next);
+        hud.setActiveSpeed(next);
+      }
+      break;
+    case 'Tab':
+      e.preventDefault();
+      campaignPanel.toggle();
+      if (campaignPanel.isVisible()) {
+        campaignPanel.update(campaignManager, toolManager.getFlux());
+      }
       break;
   }
 });
@@ -137,26 +264,49 @@ async function main() {
   hud.setFlux(toolManager.getFlux(), toolManager.getFluxCap());
 
   renderer.app.ticker.add(() => {
-    if (paused) return;
+    // 1. Run simulation ticks (decoupled from framerate)
+    timeManager.update(performance.now());
 
-    const tickResult = sim.step();
+    // 2. Always render latest state (even when paused, for smooth interactions)
+    const state = sim.getState();
 
-    // Accumulate flux from simulation
-    toolManager.addFlux(tickResult.fluxGenerated);
+    // Process latest tick result events for HUD
+    if (latestTickResult) {
+      // Update zones every 10 ticks
+      if (state.tick % 10 === 0) {
+        currentZones = zoneSystem.computeZones(state);
+        renderer.updateZones(currentZones);
+      }
 
-    // Update renderer
-    renderer.update(sim.getState());
+      // Update renderer
+      renderer.update(state, latestTickResult.prunedGenomeIds);
 
-    // Update HUD
-    hud.update(tickResult, toolManager.getFlux(), toolManager.getFluxCap());
+      // Update HUD
+      hud.update(latestTickResult, toolManager.getFlux(), toolManager.getFluxCap());
 
-    // Live-update inspector if selection active
-    updateInspector();
+      // Update objectives display
+      if (sim.hasActiveScenario()) {
+        hud.updateObjectives(Array.from(sim.getObjectives()));
+      }
+
+      // Live-update campaign panel if visible
+      if (campaignPanel.isVisible()) {
+        campaignPanel.update(campaignManager, toolManager.getFlux());
+      }
+
+      // Live-update inspector if selection active
+      updateInspector();
+
+      latestTickResult = null;
+    }
   });
 
   // Auto-pause when tab hidden
   document.addEventListener('visibilitychange', () => {
-    paused = document.hidden;
+    if (document.hidden) {
+      timeManager.setSpeed('PAUSE');
+      hud.setActiveSpeed('PAUSE');
+    }
   });
 }
 

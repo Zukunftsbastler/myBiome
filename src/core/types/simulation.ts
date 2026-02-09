@@ -28,6 +28,7 @@ export interface TickResult {
   fluxGenerated: number;
   events: SimulationEvent[];
   weather: WeatherState;
+  prunedGenomeIds?: string[];
 }
 
 /** Full simulation snapshot (read-only queries). */

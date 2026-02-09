@@ -2,7 +2,7 @@ import type { Entity, Genome } from '@core/types';
 import type { PRNG, WeatherState } from '@core/types/simulation';
 import { GridManager } from '@core/grid/GridManager';
 import { SIM_CONSTANTS as C } from '@core/math/constants';
-import { calculateErosion, deriveRootDensity } from '@core/math/simulationUtils';
+import { calculateErosion, deriveRootDensity, hexNeighbors, hexKey } from '@core/math/simulationUtils';
 
 export class EnvironmentSystem {
   /**
@@ -110,7 +110,40 @@ export class EnvironmentSystem {
       });
     }
 
-    // Pass 2: Recalculate shade and occupancy from entities
+    // Pass 2: Nutrient diffusion — surplus > 0.5 spreads 10% to neighbors
+    const diffusionDeltas = new Map<string, number>();
+    for (const cell of grid.getAllCells()) {
+      if (cell.nutrients > 0.5) {
+        const surplus = cell.nutrients - 0.5;
+        const diffuseAmount = surplus * 0.1;
+        const neighbors = hexNeighbors(cell.position);
+        let validCount = 0;
+        for (const n of neighbors) {
+          if (grid.getCell(n.q, n.r)) validCount++;
+        }
+        if (validCount > 0) {
+          const perNeighbor = diffuseAmount / validCount;
+          const sourceKey = hexKey(cell.position.q, cell.position.r);
+          diffusionDeltas.set(sourceKey, (diffusionDeltas.get(sourceKey) ?? 0) - diffuseAmount);
+          for (const n of neighbors) {
+            const nKey = hexKey(n.q, n.r);
+            if (grid.getCell(n.q, n.r)) {
+              diffusionDeltas.set(nKey, (diffusionDeltas.get(nKey) ?? 0) + perNeighbor);
+            }
+          }
+        }
+      }
+    }
+    for (const [key, delta] of diffusionDeltas) {
+      const cell = grid.getCellByKey(key);
+      if (cell) {
+        grid.mutateCell(cell.position.q, cell.position.r, {
+          nutrients: cell.nutrients + delta,
+        });
+      }
+    }
+
+    // Pass 3: Recalculate shade and occupancy from entities
     grid.recalculateShade(entities, genomes);
     grid.recalculateOccupancy(entities, genomes);
   }
