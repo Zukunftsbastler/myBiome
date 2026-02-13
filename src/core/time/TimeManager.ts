@@ -8,8 +8,8 @@ export class TimeManager {
 
   private readonly TICK_INTERVALS: Record<SpeedLevel, number> = {
     PAUSE: Infinity,
-    PLAY: 1000 / 10,   // 10 TPS
-    FAST: 1000 / 60,   // 60 TPS
+    PLAY: 1000 / 2,    // 2 TPS (meditative pace)
+    FAST: 1000 / 20,   // 20 TPS
     MAX: 0,            // time-budgeted
   };
 

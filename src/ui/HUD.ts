@@ -9,6 +9,7 @@ export interface HUDCallbacks {
   onLensChanged?: (lens: DataLens) => void;
   onCampaignToggle?: () => void;
   onSpeedChanged?: (speed: SpeedLevel) => void;
+  onQuitToMenu?: () => void;
 }
 
 const TOOL_ORDER: ToolType[] = ['INSPECT', 'HYDRATE', 'DESICCATE', 'ENRICH', 'STERILIZE', 'CULL', 'SEED'];
@@ -45,6 +46,8 @@ export class HUD {
   private activeLens: DataLens = 'OFF';
   private activeSpeed: SpeedLevel = 'PLAY';
   private maxEvents = 50;
+  private lastFlux = 0;
+  private fluxTrendEl!: HTMLElement;
 
   constructor(container: HTMLElement) {
     this.root = document.createElement('div');
@@ -71,10 +74,11 @@ export class HUD {
 
     this.tickEl = this.createStatusItem('T:0');
     this.entityCountEl = this.createStatusItem('E:0');
-    this.fluxEl = this.createStatusItem('F:100', 'hud__status-item--flux');
+    this.fluxEl = this.createStatusItem('100', 'hud__status-item--flux');
+    this.fluxTrendEl = this.createStatusItem('', 'hud__status-item--flux-trend');
     this.weatherEl = this.createStatusItem('', 'hud__status-item--weather');
 
-    bar.append(this.tickEl, this.entityCountEl, this.fluxEl, this.weatherEl);
+    bar.append(this.tickEl, this.entityCountEl, this.fluxEl, this.fluxTrendEl, this.weatherEl);
     this.root.appendChild(bar);
   }
 
@@ -161,6 +165,13 @@ export class HUD {
     btn.title = 'Kampagne & Skilltree (Tab)';
     btn.addEventListener('click', () => this.callbacks.onCampaignToggle?.());
     this.root.appendChild(btn);
+
+    const menuBtn = document.createElement('button');
+    menuBtn.className = 'hud__btn hud__menu-btn';
+    menuBtn.textContent = 'Menu';
+    menuBtn.title = 'Zurück zum Hauptmenü (Esc)';
+    menuBtn.addEventListener('click', () => this.callbacks.onQuitToMenu?.());
+    this.root.appendChild(menuBtn);
   }
 
   private buildObjectivePanel(): void {
@@ -199,6 +210,9 @@ export class HUD {
   getActiveTool(): ToolType { return this.activeTool; }
   getActiveLens(): DataLens { return this.activeLens; }
 
+  show(): void { this.root.style.display = ''; }
+  hide(): void { this.root.style.display = 'none'; }
+
   // ── Updates ──
 
   update(tickResult: TickResult, flux: number, fluxCap: number): void {
@@ -213,7 +227,31 @@ export class HUD {
   }
 
   setFlux(amount: number, cap: number): void {
-    this.fluxEl.textContent = `F:${Math.floor(amount)}/${cap}`;
+    const floored = Math.floor(amount);
+    this.fluxEl.textContent = `${floored} / ${cap}`;
+
+    // Trend calculation
+    const delta = amount - this.lastFlux;
+    this.lastFlux = amount;
+
+    if (delta > 0) {
+      this.fluxTrendEl.textContent = `+${delta.toFixed(1)}`;
+      this.fluxTrendEl.className = 'hud__status-item hud__status-item--flux-trend hud__flux-trend--gain';
+    } else if (delta < -1) {
+      this.fluxTrendEl.textContent = `${delta.toFixed(0)}`;
+      this.fluxTrendEl.className = 'hud__status-item hud__status-item--flux-trend hud__flux-trend--spend';
+    } else {
+      this.fluxTrendEl.textContent = '';
+      this.fluxTrendEl.className = 'hud__status-item hud__status-item--flux-trend';
+    }
+
+    // Flash on large changes
+    if (Math.abs(delta) > 5) {
+      this.fluxEl.classList.remove('hud__flux-flash--gain', 'hud__flux-flash--spend');
+      // Force reflow to restart animation
+      void this.fluxEl.offsetWidth;
+      this.fluxEl.classList.add(delta > 0 ? 'hud__flux-flash--gain' : 'hud__flux-flash--spend');
+    }
   }
 
   private updateWeather(w: WeatherState): void {
